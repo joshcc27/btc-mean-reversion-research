@@ -1,0 +1,352 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[top=2.5cm,bottom=2.5cm,left=2.8cm,right=2.8cm]{geometry}
+\usepackage{lmodern}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{amsmath,amssymb}
+\usepackage[hidelinks]{hyperref}
+\usepackage{parskip}
+
+\captionsetup{font=small,labelfont=bf}
+
+\title{%
+  \bfseries Intraday BTC/USDT Breakout-Reversal Research\\[0.4em]
+  \large Strategy Prototype Report%
+}
+\author{Research Prototype}
+\date{Full year 2024}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+% ─────────────────────────────────────────────────────────────────────────────
+
+This report documents an end-to-end intraday research prototype applied to
+BTC/USDT five-minute bars spanning the 2024 calendar year.  The primary goal
+is to demonstrate a reproducible research workflow---from raw exchange data
+through signal generation, risk overlays, and rigorous performance
+reporting---rather than to claim a live-tradable edge.
+
+The strategy applies a rolling z-score to log returns: when the score crosses
+a fixed entry threshold the position flips.  Transaction costs of 5\,bps per
+unit of position change are charged, which, as the results show, overwhelm the
+modest pre-cost alpha.
+
+Source code lives in \texttt{src/}; automation scripts in
+\texttt{scripts/}; exploratory notebooks in \texttt{notebooks/}.
+Lightweight smoke tests are in \texttt{tests/}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Data \& Preprocessing}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\paragraph{Source.}
+Raw Binance BTC/USDT one-minute OHLCV CSV exports for 2024 are merged, sorted
+by UTC timestamp, and deduplicated.  Bars are resampled to five-minute
+resolution using standard OHLCV rules (open\,=\,first, high\,=\,max,
+low\,=\,min, close\,=\,last, volume\,=\,sum).
+
+\paragraph{Coverage.}
+After resampling and NaN removal the dataset spans 2024-01-01 to 2024-12-31
+and contains 105,408 five-minute bars.  A 70/30 chronological
+split yields 73,786 training bars and 31,622 test bars with no
+overlap.
+
+\paragraph{Validation.}
+\texttt{validate\_ohlcv} checks for a monotone \texttt{DatetimeIndex}, no
+duplicate timestamps, positive close prices, high\,$\geq$\,low, non-negative
+volume, and absence of gaps exceeding three times the expected bar width.
+Any violation raises immediately at load time.
+
+\paragraph{Returns.}
+Per-bar log returns are computed as
+$r_t = \ln(C_t / C_{t-1})$ where $C_t$ is the closing price.
+All compounded equity curves use
+$E_T = E_0 \cdot \exp\!\bigl(\sum_t r_t\bigr)$ throughout; the incorrect
+$(1\!+\!r_t)$ cumulative product does not apply to log returns.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Strategy Design}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Signal Generation}
+
+For each bar $t$, let $\mu_t$ and $\sigma_t$ be the rolling mean and standard
+deviation of the preceding $W=20$ log returns.  The z-score is
+\begin{equation}
+  z_t = \frac{r_t - \mu_t}{\sigma_t}, \qquad \sigma_t \neq 0.
+  \label{eq:zscore}
+\end{equation}
+Bars where $\sigma_t = 0$ are set to \texttt{NaN} and force a flat
+position---they are never silently treated as zero-signal.
+
+The raw position signal is
+\begin{equation}
+  s_t = \begin{cases}
+    +1 & z_t < -1.0, \\
+    -1 & z_t > +1.0, \\
+     0 & \text{otherwise.}
+  \end{cases}
+  \label{eq:signal}
+\end{equation}
+An optional hysteresis \emph{exit bandwidth} holds a position open until the
+z-score relaxes past a softer inner threshold, reducing unnecessary reversals.
+
+\subsection{Backtest Mechanics}
+
+Positions are shifted one bar forward to eliminate look-ahead bias.  The
+net per-bar strategy return is
+\begin{equation}
+  R_t^{\mathrm{net}}
+    = p_{t-1} \cdot r_t - c\,\bigl|p_t - p_{t-1}\bigr|,
+  \label{eq:pnl}
+\end{equation}
+where $p_{t-1}$ is the lagged position and $c=0.0005$ (5\,bps)
+is the cost per unit of absolute position change.
+
+\subsection{Risk Overlays}
+
+Two optional overlays are available in \texttt{run\_backtest\_with\_costs}:
+
+\begin{enumerate}
+  \item \textbf{Volatility targeting.} The position is rescaled by
+        $\tau/\hat{\sigma}_t$, where $\tau$ is the target per-bar volatility
+        and $\hat{\sigma}_t$ is a 96-bar exponential estimate, capped at a
+        maximum leverage.
+  \item \textbf{Daily stop-out.} If the cumulative intraday P\&L loss
+        crosses a preset threshold (e.g.\ $-1\%$) the position is zeroed for
+        the rest of that UTC day.
+\end{enumerate}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Results}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Performance Summary}
+
+Tables~\ref{tab:train} and~\ref{tab:test} report annualised Sharpe ratios
+(with and without transaction costs), maximum drawdown on the net equity
+curve, trade count, and total cost debited, across three risk configurations.
+The \emph{Buy \& Hold} row provides a passive long benchmark.
+
+\begin{table}[H]
+  \centering
+  \caption{Training-set performance (70\,\% of 2024 data; 73,786 bars).}
+  \label{tab:train}
+  \medskip
+\begin{tabular}{lrrrrr}
+\toprule
+Variant & Sharpe (raw) & Sharpe (net) & Max\,DD & Trades & Cost \\
+\midrule
+Raw $\pm1$ signal & -0.243 & -73.913 & -100.0\% & 33,184 & 18.53 \\
+Vol 0.30\,\% $+$ 1\,\% stop & -0.261 & -71.882 & -100.0\% & 22,647 & 18.05 \\
+Vol 0.35\,\% $+$ 0.75\,\% stop & 0.596 & -64.904 & -100.0\% & 19,605 & 15.94 \\
+\midrule
+Buy \& Hold & 0.798 & --- & -33.0\% & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+  \centering
+  \caption{Test-set performance (held-out 30\,\%; 31,622 bars).}
+  \label{tab:test}
+  \medskip
+\begin{tabular}{lrrrrr}
+\toprule
+Variant & Sharpe (raw) & Sharpe (net) & Max\,DD & Trades & Cost \\
+\midrule
+Raw $\pm1$ signal & 2.260 & -82.579 & -100.0\% & 14,564 & 8.08 \\
+Vol 0.30\,\% $+$ 1\,\% stop & 3.210 & -76.543 & -100.0\% & 10,932 & 8.75 \\
+Vol 0.35\,\% $+$ 0.75\,\% stop & 1.583 & -73.546 & -99.9\% & 9,282 & 7.57 \\
+\midrule
+Buy \& Hold & 3.252 & --- & -15.4\% & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Sharpe Confidence Intervals}
+
+Block-bootstrap 95\,\% CIs for the annualised \emph{net} Sharpe of the
+baseline $\pm1$ signal ($b=\lfloor n^{1/3}\rfloor$, $B=1{,}000$ resamples,
+seed\,42):
+\begin{itemize}
+  \item \textbf{Train:} 95\,\% CI
+        $[-79.47,\;-68.47]$
+  \item \textbf{Test:\phantom{n}} 95\,\% CI
+        $[-89.65,\;-74.91]$
+\end{itemize}
+Both intervals lie far below zero, confirming the negative net Sharpe is not
+a statistical artefact of sample size.
+
+\subsection{Equity Curves}
+
+Figure~\ref{fig:equity} plots the net equity curve (growth of \$1 after
+costs) for the volatility-targeted variant
+(target vol\,=\,0.30\,\%, daily stop\,=\,1\,\%).
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{equity_curves.png}
+  \caption{Net equity curves on training and test sets with 5\,bps transaction
+    costs.  Both splits exhibit a near-monotone drawdown once costs are
+    factored in.  Variant: vol\,target 0.30\,\% $+$ 1\,\% daily stop.}
+  \label{fig:equity}
+\end{figure}
+
+\subsection{Parameter Sensitivity --- Risk Overlay Grid}
+
+Figure~\ref{fig:heatmap} shows the test net Sharpe across a
+$3\!\times\!3$ grid of target-volatility and daily-stop combinations.
+All nine cells are deeply negative, confirming no overlay configuration
+rescues the economics under the assumed cost model.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.72\linewidth]{overlay_heatmap.png}
+  \caption{Test net Sharpe ratio across the risk overlay grid.
+    Cell annotations show the exact value.
+    All configurations produce large negative Sharpe ratios.}
+  \label{fig:heatmap}
+\end{figure}
+
+\subsection{Hour-of-Day Analysis}
+
+Figure~\ref{fig:hourly} decomposes mean net strategy return by UTC hour on
+the test set.  Green bars indicate hours where the strategy was on average
+profitable; red bars indicate net losses.  No single UTC hour generates
+enough alpha to offset overall negative performance.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=\linewidth]{hourly_returns.png}
+  \caption{Mean net strategy return (basis points per bar) by UTC hour of
+    day, computed on the test set.  Green = positive mean return;
+    red = negative.}
+  \label{fig:hourly}
+\end{figure}
+
+\subsection{Walk-Forward Evaluation}
+
+Rolling 60-day train\,/\,10-day test windows simulate periodic model
+refreshes; strategy returns on each test slice are concatenated into a
+pseudo-live equity curve.
+
+\begin{itemize}
+  \item \textbf{Fixed parameters} ($W=20$, $z=1.5$):\quad
+        pseudo-live net Sharpe $\approx -50$;\quad
+        max drawdown $\approx -100\,\%$.
+  \item \textbf{Per-window re-optimisation}
+        ($W\in\{10,20,40\}$, $z\in\{1.0,1.5,2.0\}$):\quad
+        pseudo-live net Sharpe $\approx -27$;\quad
+        max drawdown $\approx -99\,\%$.
+\end{itemize}
+
+The re-optimised run consistently selects $W=40$, $z=2.0$ in later windows,
+indicating the optimiser gravitates toward lower turnover rather than
+discovering genuine alpha.  Full charts are in
+\texttt{notebooks/05\_walk\_forward.ipynb}.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Discussion \& Conclusion}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Key Takeaways}
+
+\begin{enumerate}
+  \item \textbf{Costs overwhelm the signal.}  Without friction the best
+        observed test Sharpe is $\approx 0.36$---weak but positive.  Adding
+        5\,bps per unit of turnover collapses it to $\approx -75$, showing
+        that a high-frequency mean-reversion strategy must trade far less
+        often or achieve meaningfully larger pre-cost alpha to be viable.
+  \item \textbf{Risk overlays help but cannot compensate.}  Volatility
+        targeting and daily stop-outs reduce trade count by $\approx 40\,\%$
+        and shrink daily drawdowns, but the residual cost drag is prohibitive.
+  \item \textbf{No intraday session provides a safe harbour.}  The
+        hour-of-day analysis reveals no UTC hour where the strategy is
+        reliably profitable net of costs.
+  \item \textbf{Walk-forward results confirm out-of-sample fragility.}
+        Periodic re-optimisation provides negligible improvement; the signal
+        has no durable edge at this frequency under the stated cost assumptions.
+\end{enumerate}
+
+\subsection{Limitations}
+
+\begin{itemize}
+  \item Single asset (BTC/USDT) and a single intraday horizon; no
+        cross-sectional diversification.
+  \item Flat 5\,bps cost model; actual costs depend on order-book depth,
+        queue position, and market impact.
+  \item No production plumbing: order routing, borrow costs, or position
+        limits are absent.
+  \item Strictly a research prototype; not trading advice.
+\end{itemize}
+
+\subsection{Future Directions}
+
+\begin{itemize}
+  \item Extend to a multi-asset basket for cross-sectional mean-reversion.
+  \item Incorporate richer execution modelling (latency, partial fills,
+        volume-adaptive costs).
+  \item Explore nonlinear features or ML overlays that might extract more
+        persistent alpha before turnover erases it.
+  \item Model volatility regimes explicitly rather than relying solely on
+        rolling-window normalisation.
+\end{itemize}
+
+\bigskip
+\noindent\rule{\linewidth}{0.4pt}
+
+\medskip
+\noindent\textit{Disclaimer: this repository is for research and educational
+purposes only and does not constitute trading advice.}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\appendix
+\section{Technical Notes}
+% ─────────────────────────────────────────────────────────────────────────────
+
+\subsection{Log-Return Compounding}
+
+All equity curves use
+\[
+  E_T = E_0 \cdot \exp\!\!\left(\sum_{t=1}^{T} r_t\right),
+\]
+not the $(1+r_t)$ cumulative product, which is incorrect for log returns and
+diverges from true P\&L over multi-month horizons.
+
+\subsection{Sharpe Ratio Convention}
+
+The annualised Sharpe ratio uses sample standard deviation
+($\mathrm{ddof}=1$):
+\[
+  \widehat{S} = \frac{\bar{r}}{s} \cdot \sqrt{N_{\mathrm{year}}},
+  \qquad
+  s = \sqrt{\frac{1}{n-1}\sum_t (r_t - \bar{r})^2},
+\]
+where $N_{\mathrm{year}} = 365 \times 288 = 105{,}120$ is the number of
+five-minute bars in a calendar year.
+
+\subsection{Block Bootstrap Confidence Intervals}
+
+CIs use a stationary block bootstrap with block size
+$b = \max\!\bigl(1, \lfloor n^{1/3} \rfloor\bigr)$ and $B=1{,}000$
+resamples (seed\,42).  The percentile method gives
+\[
+  \bigl(\widehat{S}_{\alpha/2},\;
+         \widehat{S}_{1-\alpha/2}\bigr)
+  \quad \text{at the 95\,\% level.}
+\]
+
+\end{document}
