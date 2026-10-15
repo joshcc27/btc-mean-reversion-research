@@ -33,9 +33,7 @@ Raw Binance CSVs are too large for GitHub, so place them under `data/raw/BTCUSDT
 ## How to Run
 
 ```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+uv sync
 ```
 
 ```bash
