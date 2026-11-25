@@ -1,8 +1,12 @@
-# Short-horizon mean reversion in BTC/USDT: 5-minute bars, 2024
+# Does short-term mean reversion in Bitcoin survive trading costs?
 
-I wanted to know whether a large 5-minute move in BTC/USDT tends to reverse over the next few bars. I used a rolling z-score of single-bar returns on Binance spot data for 2024, chose all parameters on the first 80% of the year, and tested once on the last 20% (Oct 19 to Dec 31).
+[![Tests](https://github.com/joshcc27/btc-mean-reversion-research/actions/workflows/tests.yml/badge.svg)](https://github.com/joshcc27/btc-mean-reversion-research/actions/workflows/tests.yml)
 
-It doesn't work. On the test period the signal lost 2.9% even before costs. The best setting in the whole training grid would only break even if fees were below 0.65 bp, and Binance charges about 10 bp. Flipping the signal into a momentum strategy gives +2.9% before costs on exactly the same trades, and it still loses heavily once fees are paid.
+Most trading ideas look profitable in a backtest until you add realistic costs and stop tuning on the data you're testing on. This project tests a common one properly: chronological train, validation and test periods, real exchange fees, and every choice made before the test data is touched.
+
+The idea is that a large 5-minute move in BTC/USDT tends to reverse over the next few bars. I measured moves with a rolling z-score of single-bar returns on Binance spot data for 2024, chose all parameters on the first 80% of the year, and tested once on the last 20% (Oct 19 to Dec 31).
+
+The answer is no. On the test period the signal lost 2.9% even before costs. The best setting in the whole training grid would only break even if fees were below 0.65 bp, and Binance charges about 10 bp. Flipping the signal into a momentum strategy gives +2.9% before costs on exactly the same trades, and it still loses heavily once fees are paid. The figure shows how net return falls as fees rise: neither direction breaks even at any realistic fee.
 
 ![Test-period net return against cost per unit turnover](reports/figures/cost_sensitivity.png)
 
@@ -64,19 +68,19 @@ As a second check, 31 rolling windows of 60 training days and 10 test days cover
 
 Test block, 21,081 bars. Returns are cumulative log returns in percent. Turnover is $\sum_t \lvert p_t - p_{t-1} \rvert$ for positions $p_t$; entries counts new long or short positions, including flips. Break-even is gross return divided by turnover. Sharpe ratios are annualised with $365 \times 288$ bars per year, and the intervals are 95% moving-block bootstrap percentiles. Net figures use 10 bp per unit turnover.
 
-| Variant | Gross | Net | Turnover | Entries | Break-even (bp) | Gross Sharpe [95% CI] | Net Sharpe |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Mean reversion, signal only | -2.87 | -214.1 | 2,112 | 1,056 | -0.14 | -0.6 [-4.6, 3.2] | -41.7 |
-| Momentum (mirror), signal only | +2.87 | -208.3 | 2,112 | 1,056 | +0.14 | 0.6 [-3.2, 4.6] | -40.8 |
-| Mean reversion, session filter + 1% stop | -11.91 | -73.5 | 616 | 308 | -1.93 | -5.5 [-9.7, -1.2] | -28.9 |
-| Momentum (mirror), session filter + 1% stop | +5.47 | -61.1 | 666 | 333 | +0.82 | 2.0 [-2.2, 6.5] | -20.8 |
-| Buy and hold | +31.65 | | | | | 3.0 | |
+| Variant | Gross | Net | Turnover | Entries | Break-even (bp) | Gross Sharpe [95% CI] |
+|---|---:|---:|---:|---:|---:|---:|
+| Mean reversion, signal only | -2.87 | -214.1 | 2,112 | 1,056 | -0.14 | -0.6 [-4.6, 3.2] |
+| Momentum (mirror), signal only | +2.87 | -208.3 | 2,112 | 1,056 | +0.14 | 0.6 [-3.2, 4.6] |
+| Mean reversion, session filter + 1% stop | -11.91 | -73.5 | 616 | 308 | -1.93 | -5.5 [-9.7, -1.2] |
+| Momentum (mirror), session filter + 1% stop | +5.47 | -61.1 | 666 | 333 | +0.82 | 2.0 [-2.2, 6.5] |
+| Buy and hold | +31.65 | | | | | 3.0 |
 
 A net log return of $-214\%$ means the account ends at $e^{-2.14} \approx 0.12$, or 12% of starting capital.
 
 The two signal-only rows mirror each other exactly: same turnover, opposite gross return. In both directions the gross Sharpe interval includes zero, so there is no measurable edge before costs, and whatever there is would be about seventy times smaller than the fee. Once the daily stop is added the rows no longer mirror, because the stop fires on different days for each direction. The session filter was chosen on train and made the mean-reversion version worse on test.
 
-Net Sharpe ratios of -21 to -42 look extreme, but they're just what happens when a strategy pays 10 bp on about 29 units of turnover a day (14 entries) and earns almost nothing before costs. The break-even cost tells you more.
+I've left net Sharpe ratios out of the table above. They come out between -21 and -42 (-41.7, -40.8, -28.9 and -20.8 for the four rows), which looks extreme but is just what happens when a strategy pays 10 bp on about 29 units of turnover a day (14 entries) and earns almost nothing before costs. The break-even cost tells you more.
 
 Walk-forward, Mar 1 to Dec 31, 10 bp:
 
