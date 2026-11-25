@@ -1,0 +1,5 @@
+variant,config,gross_log_return,net_log_return,turnover,entries,break_even_bp,sharpe_gross,sharpe_net,max_drawdown_net,sharpe_gross_ci_low,sharpe_gross_ci_high,sharpe_net_ci_low,sharpe_net_ci_high
+"Mean reversion, signal only","W=40, z=2, exit=0",-0.0286719,-2.14067,2112,1056,-0.135757,-0.613563,-41.6888,-0.883081,-4.5535,3.17565,-46.2328,-37.4925
+"Momentum (mirror), signal only","W=40, z=2, exit=0",0.0286719,-2.08333,2112,1056,0.135757,0.613563,-40.8411,-0.875485,-3.17565,4.5535,-45.9361,-35.6793
+"Mean reversion, selected overlays","W=40, z=2, exit=0, hours=[0, 12, 13, 15, 16, 18, 20, 21], stop=1.00%",-0.11914,-0.73514,616,308,-1.93409,-5.45235,-28.8944,-0.520562,-9.71641,-1.16304,-32.5197,-25.1239
+"Momentum (mirror), selected overlays","W=40, z=2, exit=0, hours=[0, 12, 13, 15, 16, 18, 20, 21], stop=1.00%",0.0546999,-0.6113,666,333,0.821319,2.03499,-20.8064,-0.457355,-2.2404,6.54383,-25.1026,-16.2826

@@ -1,0 +1,180 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[top=2.5cm,bottom=2.5cm,left=2.5cm,right=2.5cm]{geometry}
+\usepackage{lmodern}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{graphicx}
+\usepackage{caption}
+\usepackage{float}
+\usepackage{amsmath}
+\usepackage[hidelinks]{hyperref}
+\usepackage{parskip}
+\graphicspath{{figures/}}
+\captionsetup{font=small,labelfont=bf}
+
+\title{Short-horizon mean reversion in BTC/USDT:\\ a test on 5-minute bars, 2024}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section*{Result}
+
+A rolling z-score mean-reversion signal on 5-minute BTC/USDT returns does not
+cover trading costs. On the held-out test block its gross return is
+$-$2.87\,\% over 2,112 units of turnover,
+a break-even cost of $-$0.14\,bp per unit turnover. Binance spot
+taker fees are about 10\,bp per side for a regular account (our assumption).
+The best break-even cost anywhere in the 27-point training grid was
+0.65\,bp. The momentum version of the same signal (its exact
+negative) has the opposite gross return and the same costs, so it fails too.
+
+\section{Data}
+
+Binance spot BTCUSDT 1-minute klines for 2024, from the public archive at
+\url{https://data.binance.vision}, aggregated to 5-minute bars
+(open first, high max, low min, close last, volume sum). The year has
+105,408 complete 5-minute bars and no gaps.
+\texttt{validate\_ohlcv} runs when the raw files are loaded (sorted unique
+timestamps, positive close, high $\geq$ low, non-negative volume) and again
+on the 5-minute bars, where it also rejects gaps longer than three bars.
+
+The series is split by time into train (Jan 01--Aug 07,
+63,244 bars), validation (Aug 07--Oct 19,
+21,082 bars) and test (Oct 19--Dec 31,
+21,081 bars), a 60/20/20 split. Signals are computed on the full
+series and then sliced, which is valid because they only use past bars.
+
+\section{Signal and backtest}
+
+With $r_t = \ln(C_t/C_{t-1})$ and $\mu_t,\sigma_t$ the mean and population
+standard deviation of $r_{t-W+1},\dots,r_t$,
+\begin{equation}
+  z_t = \frac{r_t-\mu_t}{\sigma_t}, \qquad
+  s_t = \begin{cases} +1 & z_t < -k\\ -1 & z_t > k\\ 0 & \text{otherwise} \end{cases}
+\end{equation}
+for the mean-reversion direction; the momentum direction is $-s_t$. An optional
+exit band $e<k$ holds a position until $z$ relaxes past $\mp e$. Bars with
+$\sigma_t=0$ get no signal.
+
+The position for bar $t$ is decided at the close of bar $t-1$:
+$p_t = s_{t-1}\cdot m_{t-1}$, where $m$ is the volatility scaler (1 if
+off). Per-bar net return is
+\begin{equation}
+  R_t = p_t r_t - c\,|p_t - p_{t-1}|,
+\end{equation}
+with $c = 0.001$ (10\,bp) in the main results. Positions are
+capped at $|p|\le 1$, so there is no leverage.
+
+Volatility targeting sets $m_{t-1} = \min(1, \tau/\hat\sigma_{t-1})$ where
+$\hat\sigma_{t-1}$ is the equal-weighted standard deviation of the
+96 returns up to and including bar $t-1$. The daily stop sets
+the position to zero for the rest of the UTC day once that day's cumulative
+\emph{net} return reaches $-L$.
+
+\section{Selection protocol}
+
+\begin{enumerate}
+  \item Train: a grid of $W\in\{10,20,40\}$, $k\in\{1,1.5,2\}$ and exit band
+        $\in\{\text{none},0.5,0\}$ (27 points). The highest net Sharpe at 10\,bp
+        was $W=40$, $k=2$, exit band 0.
+  \item Train: the 8 UTC hours with the highest mean gross
+        return of that signal form a candidate session filter (hours 0, 12, 13, 15, 16, 18, 20, 21).
+  \item Validation: session filter on/off $\times$ volatility target
+        $\in\{\text{off}, 0.10, 0.13, 0.16\}\,\%$ per bar $\times$ daily stop
+        $\in\{\text{off}, 0.75, 1\}\,\%$ (24 points). The highest net Sharpe was
+        the session filter (UTC hours 0, 12, 13, 15, 16, 18, 20, 21) and a 1\,\% daily stop.
+  \item Test: the selected signal, with and without its overlays, in both
+        directions, evaluated once.
+\end{enumerate}
+
+With the position cap at 1, volatility targeting can only reduce exposure. The
+share of validation bars at the cap was 0.10\,\\%: 32\%, 0.13\,\\%: 56\%, 0.16\,\\%: 73\% for the three targets.
+
+\section{Results on the test block}
+
+\begin{table}[H]
+\centering\small
+\caption{Test block (21,081 bars). Returns are cumulative log returns.
+Turnover is $\sum_t|p_t-p_{t-1}|$. Break-even is gross return divided by turnover.
+Sharpe ratios are annualised with $365\times288$ bars per year; intervals are
+moving-block bootstrap percentiles (block $\lfloor n^{1/3}\rfloor$, 1{,}000
+resamples). Net figures use 10\,bp per unit turnover.}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{lrrrrrr}
+\toprule
+Variant & Gross (\%) & Net (\%) & Turnover & Break-even (bp) & Gross Sharpe [95\% CI] & Net Sharpe \\
+\midrule
+Mean reversion, signal only & $-$2.87 & $-$214.1 & 2,112 & $-$0.14 & $-$0.6 [$-$4.6, 3.2] & $-$41.7 \\
+Momentum (mirror), signal only & 2.87 & $-$208.3 & 2,112 & 0.14 & 0.6 [$-$3.2, 4.6] & $-$40.8 \\
+Mean reversion, selected overlays & $-$11.91 & $-$73.5 & 616 & $-$1.93 & $-$5.5 [$-$9.7, $-$1.2] & $-$28.9 \\
+Momentum (mirror), selected overlays & 5.47 & $-$61.1 & 666 & 0.82 & 2.0 [$-$2.2, 6.5] & $-$20.8 \\
+\midrule
+Buy and hold & 31.65 & --- & --- & --- & 3.0 & --- \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+The signal-only rows are exact mirrors: same turnover, opposite gross return.
+With a daily stop the mirror is not exact, because the stop fires on different
+days for the two directions. The gross Sharpe intervals include zero for the
+signal-only rows; the annualised net Sharpe is large and negative only because
+costs are charged on almost every trade, and it says little beyond that.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.85\linewidth]{cost_sensitivity.png}
+\caption{Test net return as a function of cost per unit turnover.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{equity_curves.png}
+\caption{Cumulative gross and net log return on the test block, both directions, signal only.}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=\linewidth]{break_even_grid.png}
+\caption{Break-even cost on the training block for every grid point.}
+\end{figure}
+
+\section{Walk-forward check}
+
+Rolling 60-day train and 10-day test windows over the
+whole year, at 10\,bp. The fixed run uses $W=20$, $k=1.5$ in
+every window; the re-selected run picks $(W,k)$ by net Sharpe on each training
+window. Choices across 31 windows: $W=40, k=2$ (20); $W=10, k=2$ (9); $W=20, k=2$ (2).
+
+\begin{table}[H]
+\centering\small
+\begin{tabular}{lrrrrr}
+\toprule
+Method & Gross (\%) & Net (\%) & Turnover & Break-even (bp) & Net Sharpe [95\% CI] \\
+\midrule
+Fixed W$=$20, z$=$1.5 & $-$2.60 & $-$2,122.4 & 21,198 & $-$0.01 & $-$89.9 [$-$93.6, $-$86.2] \\
+Re-selected per window & $-$10.78 & $-$874.2 & 8,634 & $-$0.12 & $-$51.4 [$-$54.5, $-$48.0] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Limitations}
+
+\begin{itemize}
+  \item One asset, one year, one bar size. Q4 2024 was a strong uptrend
+        (buy and hold returned 37% on the test block).
+  \item The cost model is linear: a flat fee per unit turnover, no spread, impact,
+        latency or partial fills. Maker execution or VIP fee tiers would be cheaper
+        than 10\,bp, but every grid point breaks even well below 1\,bp.
+  \item The parameter and overlay grids, and the choice to test this signal at all,
+        were informed by an earlier pass over the full 2024 sample (with the
+        signal sign reversed). The train/validation/test protocol removes direct
+        selection on test data, but not that earlier exposure.
+  \item Annualised Sharpe ratios at 5-minute frequency are noisy; the bootstrap
+        intervals above are wide.
+\end{itemize}
+
+\end{document}

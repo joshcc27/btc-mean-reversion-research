@@ -1,0 +1,17 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Raw and processed market data are downloaded/rebuilt by scripts/download_data.py
+data/
+
+# LaTeX build output (the PDF is built locally only when pdflatex is available)
+reports/*.pdf
+reports/*.aux
+reports/*.log
+reports/*.out
+reports/*.toc
+
+# Figures under reports/figures/ are committed because the README embeds them.
