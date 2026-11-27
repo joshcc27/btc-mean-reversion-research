@@ -95,7 +95,7 @@ More figures are in `reports/figures/`: test equity curves for both directions (
 
 ## Limitations
 
-- One asset, one year, one bar size. The test block was a strong uptrend (buy and hold +37%), and ten weeks of 5-minute bars is still a short sample for a Sharpe estimate.
+- One asset, one year, one bar size. The test block was a strong uptrend (buy and hold +31.7% as a log return, a 37% rise in price), and ten weeks of 5-minute bars is still a short sample for a Sharpe estimate.
 - The cost model is linear. It ignores spread, impact, latency, partial fills and queue position. Trading only with limit orders would cut fees, but those orders tend to fill when the price is about to move against you, and that isn't modelled.
 - Validation numbers were used to choose the overlays, so they are optimistic.
 - The test period wasn't completely unseen. I chose the parameter grids, and decided to test this signal at all, after an earlier look at the full 2024 data. The three-way split stops direct selection on test data, but it can't undo that earlier look. The walk-forward grid has the same issue.
