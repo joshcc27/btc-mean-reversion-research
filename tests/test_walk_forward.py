@@ -60,4 +60,6 @@ def test_future_data_does_not_change_earlier_windows() -> None:
         a["test_returns"].loc[first.test_start : first.test_end],
         b["test_returns"].loc[first.test_start : first.test_end],
     )
-    assert a["per_window_metrics"][0]["chosen_window"] == b["per_window_metrics"][0]["chosen_window"]
+    assert (
+        a["per_window_metrics"][0]["chosen_window"] == b["per_window_metrics"][0]["chosen_window"]
+    )

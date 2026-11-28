@@ -46,7 +46,7 @@ def test_vol_scaling_never_exceeds_cap(random_walk: pd.DataFrame) -> None:
     sig = rolling_zscore_signal(random_walk, window=20, z_entry=1.0)
     bt = run_backtest(sig, target_volatility=0.01, max_position=1.0)
     assert bt.df["position"].abs().max() <= 1.0
-    assert bt.extras["share_of_bars_at_cap"] == 1.0
+    assert bt.share_of_bars_at_cap == 1.0
 
 
 def test_daily_stop_triggers_on_cost_only_losses() -> None:

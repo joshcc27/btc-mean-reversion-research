@@ -21,4 +21,6 @@ def random_walk() -> pd.DataFrame:
 def make_frame(log_returns: list[float], signal: list[float]) -> pd.DataFrame:
     """Frame with given per-bar log returns and signal, 5-minute UTC index."""
     idx = pd.date_range("2024-01-01", periods=len(log_returns), freq="5min", tz="UTC")
-    return pd.DataFrame({"close": 100.0, "log_return": log_returns, "signal_raw": signal}, index=idx)
+    return pd.DataFrame(
+        {"close": 100.0, "log_return": log_returns, "signal_raw": signal}, index=idx
+    )

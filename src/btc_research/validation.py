@@ -57,6 +57,3 @@ def validate_ohlcv(
                 f"validate_ohlcv: {int(too_long.sum())} gap(s) exceed {max_gap_multiplier}x "
                 f"the expected bar width. Largest gap: {gaps.max()} ending {gaps.idxmax()}."
             )
-
-
-__all__ = ["validate_ohlcv"]

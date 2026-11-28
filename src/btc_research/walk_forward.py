@@ -20,7 +20,7 @@ import pandas as pd
 from .backtest import run_backtest
 from .metrics import count_entries, max_drawdown, sharpe_ratio
 from .param_search import grid_search
-from .signals import Direction, rolling_zscore_signal
+from .signals import rolling_zscore_signal
 
 DEFAULT_COST_PER_UNIT: float = 0.001
 
@@ -41,13 +41,6 @@ def generate_rolling_windows(
     df: pd.DataFrame, train_days: int = 60, test_days: int = 10
 ) -> list[WindowSpec]:
     """Train blocks of ``train_days`` followed by test blocks of ``test_days``, rolled by ``test_days``."""
-    if not isinstance(df.index, pd.DatetimeIndex):
-        raise TypeError("DataFrame index must be a DatetimeIndex.")
-    if df.empty:
-        return []
-    if train_days <= 0 or test_days <= 0:
-        raise ValueError("train_days and test_days must be positive.")
-
     start = df.index.min().normalize()
     end = df.index.max().normalize()
     train_delta, test_delta = pd.Timedelta(days=train_days), pd.Timedelta(days=test_days)
@@ -73,7 +66,6 @@ def best_params_on_train(
     windows: Sequence[int],
     z_entries: Sequence[float],
     cost_per_unit_turnover: float = DEFAULT_COST_PER_UNIT,
-    direction: Direction = "mean_reversion",
 ) -> tuple[int, float]:
     """Return the (window, z_entry) with the highest net Sharpe on ``df_train``."""
     grid = grid_search(
@@ -82,10 +74,7 @@ def best_params_on_train(
         windows=windows,
         z_entries=z_entries,
         cost_per_unit_turnover=cost_per_unit_turnover,
-        direction=direction,
     )
-    if grid.empty:
-        raise ValueError("Unable to identify best parameters on training window.")
     best = grid.iloc[0]
     return int(best["window"]), float(best["z_entry"])
 
@@ -95,7 +84,6 @@ def run_walk_forward(
     windows: Sequence[WindowSpec],
     select_params: ParamSelector,
     cost_per_unit_turnover: float = DEFAULT_COST_PER_UNIT,
-    direction: Direction = "mean_reversion",
 ) -> dict[str, Any]:
     """Run a walk-forward test with a caller-supplied parameter selector.
 
@@ -105,22 +93,14 @@ def run_walk_forward(
         Dict with ``test_returns`` (concatenated net returns), ``test_equity_curve``
         and ``per_window_metrics`` (list of dicts).
     """
-    if not windows:
-        raise ValueError("windows must contain at least one window.")
-
     returns: list[pd.Series] = []
     equities: list[pd.Series] = []
     rows: list[dict[str, Any]] = []
     equity = 1.0
 
     for spec in windows:
-        df_train = df.loc[spec.train_start : spec.train_end]
-        if df_train.empty or df.loc[spec.test_start : spec.test_end].empty:
-            continue
-        w, z = select_params(df_train)
-
-        history = df.loc[: spec.test_end]
-        sig = rolling_zscore_signal(history, window=w, z_entry=z, direction=direction)
+        w, z = select_params(df.loc[spec.train_start : spec.train_end])
+        sig = rolling_zscore_signal(df.loc[: spec.test_end], window=w, z_entry=z)
         bt = run_backtest(
             sig.loc[spec.test_start : spec.test_end], cost_per_unit_turnover=cost_per_unit_turnover
         )
@@ -146,8 +126,6 @@ def run_walk_forward(
             }
         )
 
-    if not returns:
-        raise ValueError("No non-empty test segments in walk-forward.")
     return {
         "test_returns": pd.concat(returns).sort_index(),
         "test_equity_curve": pd.concat(equities).sort_index(),
@@ -161,11 +139,10 @@ def walk_forward_fixed_params(
     window_param: int = 20,
     z_entry_param: float = 1.5,
     cost_per_unit_turnover: float = DEFAULT_COST_PER_UNIT,
-    direction: Direction = "mean_reversion",
 ) -> dict[str, Any]:
     """Walk-forward with the same parameters in every window."""
     return run_walk_forward(
-        df, windows, lambda _train: (window_param, z_entry_param), cost_per_unit_turnover, direction
+        df, windows, lambda _train: (window_param, z_entry_param), cost_per_unit_turnover
     )
 
 
@@ -175,7 +152,6 @@ def walk_forward_retrained_params(
     candidate_windows: Sequence[int],
     candidate_z_entries: Sequence[float],
     cost_per_unit_turnover: float = DEFAULT_COST_PER_UNIT,
-    direction: Direction = "mean_reversion",
 ) -> dict[str, Any]:
     """Walk-forward that re-selects (window, z_entry) by net Sharpe on each training block."""
     selector = partial(
@@ -183,17 +159,5 @@ def walk_forward_retrained_params(
         windows=candidate_windows,
         z_entries=candidate_z_entries,
         cost_per_unit_turnover=cost_per_unit_turnover,
-        direction=direction,
     )
-    return run_walk_forward(df, windows, selector, cost_per_unit_turnover, direction)
-
-
-__all__ = [
-    "DEFAULT_COST_PER_UNIT",
-    "WindowSpec",
-    "best_params_on_train",
-    "generate_rolling_windows",
-    "run_walk_forward",
-    "walk_forward_fixed_params",
-    "walk_forward_retrained_params",
-]
+    return run_walk_forward(df, windows, selector, cost_per_unit_turnover)

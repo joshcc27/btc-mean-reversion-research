@@ -1,4 +1,4 @@
-"""The research protocol used by the notebooks, the pipeline script, and the report.
+"""The research protocol, shared by the notebooks and both scripts.
 
 Protocol (chronological 60/20/20 split of 2024 five-minute bars):
     1. Train: grid-search signal parameters (window, entry z, exit band) for the
@@ -27,10 +27,9 @@ from .param_search import grid_search
 from .preprocess import PROCESSED_PATH, chronological_split, load_processed_ohlcv
 from .signals import Direction, rolling_zscore_signal
 
-# Cost assumption: 10 bp of notional per unit of turnover. This is about the Binance
-# spot taker fee for a regular (non-VIP) account without the BNB discount (0.10%
-# per side at the time of writing). The BTCUSDT half-spread (~0.01 bp) and market
-# impact for small size are ignored.
+# Cost per unit of turnover. 10 bp is roughly the Binance spot taker fee for a regular
+# account without the BNB discount (0.10% per side). The BTCUSDT half-spread (~0.01 bp)
+# and market impact for small size are ignored.
 BASE_COST: float = 0.0010
 BINANCE_TAKER_FEE_BP: float = 10.0
 COST_GRID_BP: tuple[float, ...] = tuple(float(c) for c in range(0, 16))
@@ -84,7 +83,9 @@ class StrategyConfig:
 
     def signal_only(self) -> StrategyConfig:
         """Same signal parameters, no session filter and no overlays."""
-        return StrategyConfig(self.window, self.z_entry, self.exit_bandwidth, direction=self.direction)
+        return StrategyConfig(
+            self.window, self.z_entry, self.exit_bandwidth, direction=self.direction
+        )
 
     def mirrored(self) -> StrategyConfig:
         flip: Direction = "momentum" if self.direction == "mean_reversion" else "mean_reversion"
@@ -140,7 +141,7 @@ def backtest(
     return run_backtest(sig, cost_per_unit_turnover=cost, **config.risk_params())
 
 
-# ── Step 1: signal parameters on train ───────────────────────────────────────
+# Step 1: signal parameters on train
 
 
 def signal_grid(splits: Splits, cost: float = BASE_COST) -> pd.DataFrame:
@@ -170,7 +171,7 @@ def select_signal(grid: pd.DataFrame) -> StrategyConfig:
     )
 
 
-# ── Step 2: session hours on train ───────────────────────────────────────────
+# Step 2: session hours on train
 
 
 def train_hourly_gross(splits: Splits, config: StrategyConfig) -> pd.Series:
@@ -183,7 +184,7 @@ def select_session_hours(hourly: pd.Series, n: int = N_SESSION_HOURS) -> frozens
     return frozenset(int(h) for h in hourly.nlargest(n).index)
 
 
-# ── Step 3: overlays on validation ───────────────────────────────────────────
+# Step 3: overlays on validation
 
 
 def overlay_grid(
@@ -194,9 +195,7 @@ def overlay_grid(
 ) -> pd.DataFrame:
     """Evaluate session filter x vol target x daily stop on train and validation."""
     rows = []
-    for hours, vol, stop in itertools.product(
-        (None, session_hours), VOL_TARGETS, DAILY_STOPS
-    ):
+    for hours, vol, stop in itertools.product((None, session_hours), VOL_TARGETS, DAILY_STOPS):
         cfg = replace(
             base.signal_only(), active_hours=hours, target_volatility=vol, daily_stop_loss=stop
         )
@@ -229,7 +228,7 @@ def select_overlay(
     )
 
 
-# ── Step 4: test, once ───────────────────────────────────────────────────────
+# Step 4: test, once
 
 
 @dataclass
@@ -247,7 +246,9 @@ class StudyResult:
     buy_and_hold: dict[str, dict[str, float]]
 
 
-def reported_variants(signal_config: StrategyConfig, final_config: StrategyConfig) -> dict[str, StrategyConfig]:
+def reported_variants(
+    signal_config: StrategyConfig, final_config: StrategyConfig
+) -> dict[str, StrategyConfig]:
     """The four configurations reported on test: {signal only, selected} x {MR, momentum}."""
     variants = {
         "Mean reversion, signal only": signal_config.signal_only(),
@@ -260,13 +261,18 @@ def reported_variants(signal_config: StrategyConfig, final_config: StrategyConfi
 
 
 def results_table(
-    splits: Splits, variants: dict[str, StrategyConfig], split: str = "test", cost: float = BASE_COST
+    splits: Splits,
+    variants: dict[str, StrategyConfig],
+    split: str = "test",
+    cost: float = BASE_COST,
 ) -> tuple[pd.DataFrame, dict[str, BacktestResult]]:
     rows, runs = [], {}
     for label, cfg in variants.items():
         bt = backtest(splits, cfg, split, cost)
         runs[label] = bt
-        rows.append({"variant": label, "config": cfg.describe(), **summarize_backtest(bt, with_ci=True)})
+        rows.append(
+            {"variant": label, "config": cfg.describe(), **summarize_backtest(bt, with_ci=True)}
+        )
     return pd.DataFrame(rows).set_index("variant"), runs
 
 
@@ -316,35 +322,3 @@ def run_study(path: str | Path = PROCESSED_PATH, cost: float = BASE_COST) -> Stu
         test_runs=runs,
         buy_and_hold=bh,
     )
-
-
-__all__ = [
-    "BASE_COST",
-    "BINANCE_TAKER_FEE_BP",
-    "COST_GRID_BP",
-    "DAILY_STOPS",
-    "EXIT_BANDWIDTHS",
-    "MAX_POSITION",
-    "N_SESSION_HOURS",
-    "SPLIT_FRACTIONS",
-    "SPLIT_NAMES",
-    "StrategyConfig",
-    "Splits",
-    "StudyResult",
-    "VOL_LOOKBACK",
-    "VOL_TARGETS",
-    "WINDOWS",
-    "Z_ENTRIES",
-    "backtest",
-    "cost_curves",
-    "load_splits",
-    "overlay_grid",
-    "results_table",
-    "run_study",
-    "select_overlay",
-    "select_session_hours",
-    "select_signal",
-    "signal_grid",
-    "reported_variants",
-    "train_hourly_gross",
-]

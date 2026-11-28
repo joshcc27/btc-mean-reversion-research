@@ -41,7 +41,7 @@ The metric "entries" (`metrics.count_entries`) counts bars on which a new long o
 
 Train is used for the signal grid and the session-hour ranking, validation for the overlay choice, and test only once. Every choice is made on net Sharpe at 10 bp.
 
-At that fee level, net Sharpe depends almost entirely on how much a configuration trades. Across the 27-point training grid, net Sharpe and turnover have a correlation of $-0.98$, so the procedure ends up picking the slowest configuration. That's why break-even cost is reported for every grid point: it shows the gross edge separately from the ranking.
+At that fee level, net Sharpe depends almost entirely on how much a configuration trades. Across the 27-point training grid, net Sharpe and turnover have a correlation of $-0.98$, so the procedure ends up picking the slowest configuration. I report break-even cost for every grid point because it shows the gross edge separately from the ranking.
 
 The momentum direction isn't a separate hypothesis. Without a daily stop, its gross P&L is exactly the negative of the mean-reversion gross P&L, at the same cost. If one direction had an edge before costs, the other would show a matching loss. Showing both makes it easy to see that the gross numbers are small and sit either side of zero.
 

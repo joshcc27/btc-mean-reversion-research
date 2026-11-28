@@ -32,9 +32,6 @@ def resample_ohlcv(df_raw: pd.DataFrame, rule: str = FIVE_MINUTES) -> pd.DataFra
     Bars are labelled by their open time (pandas default ``label='left'``), so the
     close of the bar stamped 00:05 is the last trade before 00:10.
     """
-    if not isinstance(df_raw.index, pd.DatetimeIndex):
-        raise ValueError("Input DataFrame index must be a DatetimeIndex.")
-
     out = df_raw.resample(rule).agg(OHLCV_AGG).dropna(subset=["close"])
     close = out["close"]
     return out.assign(
@@ -57,56 +54,23 @@ def build_dataset(
     return df
 
 
-def load_processed_ohlcv(
-    path: str | Path = PROCESSED_PATH,
-    date_start: str | pd.Timestamp | None = None,
-    date_end: str | pd.Timestamp | None = None,
-) -> pd.DataFrame:
+def load_processed_ohlcv(path: str | Path = PROCESSED_PATH) -> pd.DataFrame:
     """Load the processed 5-minute Parquet file, building it from raw data if missing.
 
-    The first bar (no prior close, so no return) is dropped. Date bounds are inclusive.
+    The first bar (no prior close, so no return) is dropped.
     """
     data_path = Path(path)
     df = pd.read_parquet(data_path) if data_path.exists() else build_dataset(output_path=data_path)
-    df = df.sort_index()
-    if date_start is not None:
-        df = df.loc[df.index >= pd.Timestamp(date_start, tz="UTC")]
-    if date_end is not None:
-        df = df.loc[df.index <= pd.Timestamp(date_end, tz="UTC")]
-    return df.dropna(subset=["log_return"]).copy()
+    return df.sort_index().dropna(subset=["log_return"]).copy()
 
 
 def chronological_split(
     df: pd.DataFrame,
     fractions: Sequence[float] = (0.6, 0.2, 0.2),
 ) -> list[pd.DataFrame]:
-    """Split a time-ordered frame into consecutive, non-overlapping blocks by row count.
+    """Split a time-ordered frame into consecutive blocks by row count.
 
-    Args:
-        df: Frame sorted by time.
-        fractions: Share of rows in each block; must be positive and sum to 1.
-
-    Returns:
-        One DataFrame per fraction, in chronological order.
+    ``fractions`` gives the share of rows in each block and should sum to 1.
     """
-    if df.empty:
-        raise ValueError("Input DataFrame is empty; cannot split.")
-    if any(f <= 0 for f in fractions) or not np.isclose(sum(fractions), 1.0):
-        raise ValueError("fractions must be positive and sum to 1.")
-    if len(df) < len(fractions):
-        raise ValueError("Not enough rows for the requested number of blocks.")
-
     bounds = np.round(np.cumsum([0.0, *fractions]) * len(df)).astype(int)
     return [df.iloc[a:b].copy() for a, b in zip(bounds[:-1], bounds[1:], strict=True)]
-
-
-__all__ = [
-    "FIVE_MINUTES",
-    "PROCESSED_PATH",
-    "PROJECT_ROOT",
-    "RAW_DIR",
-    "build_dataset",
-    "chronological_split",
-    "load_processed_ohlcv",
-    "resample_ohlcv",
-]

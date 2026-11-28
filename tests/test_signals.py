@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from btc_research.signals import ZScoreSignalConfig, _hysteresis_signal, rolling_zscore_signal
+from btc_research.signals import _hysteresis_signal, rolling_zscore_signal
 
 
 def _prices_with_jump(jump: float) -> pd.DataFrame:
@@ -47,7 +47,7 @@ def test_momentum_is_exact_negative(random_walk: pd.DataFrame, exit_bw: float | 
 
 def test_hysteresis_holds_until_exit_band() -> None:
     z = np.array([0.0, -2.5, -1.0, -0.6, -0.4, 0.0, 2.5, 1.0, 0.4])
-    out = _hysteresis_signal(z, bandwidth=2.0, exit_bandwidth=0.5)
+    out = _hysteresis_signal(z, z_entry=2.0, exit_bandwidth=0.5)
     # Long at -2.5, held while z <= -0.5, closed at -0.4. Short at 2.5, held at 1.0, closed at 0.4.
     np.testing.assert_array_equal(out, [0, 1, 1, 1, 0, 0, -1, -1, 0])
 
@@ -65,8 +65,8 @@ def test_signal_uses_only_past_data(random_walk: pd.DataFrame) -> None:
     pd.testing.assert_series_equal(full["signal_raw"].iloc[:700], cut["signal_raw"])
 
 
-def test_invalid_config() -> None:
+def test_invalid_parameters(random_walk: pd.DataFrame) -> None:
     with pytest.raises(ValueError):
-        ZScoreSignalConfig(bandwidth=1.0, exit_bandwidth=1.0)
+        rolling_zscore_signal(random_walk, z_entry=1.0, exit_bandwidth=1.0)
     with pytest.raises(ValueError):
-        ZScoreSignalConfig(direction="sideways")  # type: ignore[arg-type]
+        rolling_zscore_signal(random_walk, direction="sideways")  # type: ignore[arg-type]

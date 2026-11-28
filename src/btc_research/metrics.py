@@ -85,14 +85,8 @@ def sharpe_confidence_interval(
     points are drawn uniformly with replacement from all n - block_size + 1
     positions (blocks may overlap), then truncates to n bars. Blocks keep
     short-range autocorrelation and volatility clustering inside each block.
-
-    Args:
-        returns: Per-bar returns.
-        n_bootstrap: Number of resamples.
-        block_size: Block length in bars. Defaults to the n^(1/3) rule.
-        confidence: Interval coverage, e.g. 0.95.
-        periods_per_year: Annualisation factor (None for per-bar Sharpe).
-        seed: RNG seed, for reproducible intervals.
+    ``block_size`` defaults to the n^(1/3) rule, and ``periods_per_year=None``
+    gives the per-bar Sharpe ratio.
     """
     arr = returns.dropna().to_numpy()
     n = len(arr)
@@ -115,28 +109,20 @@ def sharpe_confidence_interval(
     return (float(np.quantile(sharpes, alpha)), float(np.quantile(sharpes, 1.0 - alpha)))
 
 
-def buy_and_hold_metrics(
-    df: pd.DataFrame,
-    return_col: str = "log_return",
-    periods_per_year: int | None = BARS_PER_YEAR,
-) -> dict[str, float]:
+def buy_and_hold_metrics(df: pd.DataFrame) -> dict[str, float]:
     """Sharpe, max drawdown, total log return and total simple return of holding the asset."""
-    if return_col not in df.columns:
-        raise KeyError(f"Column '{return_col}' not found in DataFrame.")
-    r = df[return_col].dropna()
+    r = df["log_return"].dropna()
     equity = np.exp(r.cumsum())
     return {
-        "sharpe": sharpe_ratio(r, periods_per_year),
+        "sharpe": sharpe_ratio(r),
         "max_drawdown": max_drawdown(equity),
         "log_return": float(r.sum()),
-        "total_return": float(equity.iloc[-1] - 1.0) if not equity.empty else 0.0,
+        "total_return": float(equity.iloc[-1] - 1.0),
     }
 
 
 def returns_by_hour_of_day(strategy_returns: pd.Series) -> pd.Series:
     """Mean per-bar return grouped by UTC hour (index 0-23)."""
-    if not isinstance(strategy_returns.index, pd.DatetimeIndex):
-        raise TypeError("strategy_returns must have a DatetimeIndex.")
     return strategy_returns.groupby(strategy_returns.index.hour).mean().rename("mean_return")
 
 
@@ -161,8 +147,8 @@ def summarize_backtest(result: BacktestResult, with_ci: bool = False) -> dict[st
         "sharpe_net": sharpe_ratio(df["strategy_return_net"]),
         "max_drawdown_net": max_drawdown(df["equity_curve_net"]),
     }
-    if "share_of_bars_at_cap" in result.extras:
-        out["share_of_bars_at_cap"] = result.extras["share_of_bars_at_cap"]
+    if result.share_of_bars_at_cap is not None:
+        out["share_of_bars_at_cap"] = result.share_of_bars_at_cap
     if with_ci:
         out["sharpe_gross_ci_low"], out["sharpe_gross_ci_high"] = sharpe_confidence_interval(
             df["strategy_return_gross"]
@@ -171,18 +157,3 @@ def summarize_backtest(result: BacktestResult, with_ci: bool = False) -> dict[st
             df["strategy_return_net"]
         )
     return out
-
-
-__all__ = [
-    "BARS_PER_DAY",
-    "BARS_PER_YEAR",
-    "break_even_cost",
-    "buy_and_hold_metrics",
-    "count_entries",
-    "max_drawdown",
-    "returns_by_hour_of_day",
-    "sharpe_confidence_interval",
-    "sharpe_ratio",
-    "summarize_backtest",
-    "turnover",
-]

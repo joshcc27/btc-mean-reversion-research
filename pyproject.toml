@@ -34,6 +34,8 @@ addopts = "-q"
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+# Match CI, which lints src, scripts and tests but not the notebooks.
+extend-exclude = ["notebooks"]
 
 [tool.ruff.lint]
 select = [
@@ -51,21 +53,3 @@ ignore = [
 
 [tool.ruff.lint.isort]
 known-first-party = ["btc_research"]
-
-[tool.ruff.format]
-quote-style = "double"
-indent-style = "space"
-
-[tool.mypy]
-python_version = "3.12"
-strict = false
-ignore_missing_imports = true
-warn_return_any = true
-warn_unused_ignores = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-check_untyped_defs = true
-
-[[tool.mypy.overrides]]
-module = ["notebooks.*"]
-ignore_errors = true

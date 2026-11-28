@@ -56,13 +56,13 @@ def _read_kline_file(path: Path) -> pd.DataFrame:
     return frame
 
 
-def find_kline_files(raw_dir: str | Path, symbol: str = "BTCUSDT", interval: str = "1m") -> list[Path]:
-    """Return monthly kline archives/CSVs in ``raw_dir``, sorted by name (i.e. by month)."""
+def find_kline_files(
+    raw_dir: str | Path, symbol: str = "BTCUSDT", interval: str = "1m"
+) -> list[Path]:
+    """Return the monthly kline archives or CSVs in ``raw_dir``, sorted by name (so by month)."""
     raw_path = Path(raw_dir)
     files = sorted(
-        p
-        for p in raw_path.glob(f"{symbol}-{interval}-*")
-        if p.suffix.lower() in {".zip", ".csv"}
+        p for p in raw_path.glob(f"{symbol}-{interval}-*") if p.suffix.lower() in {".zip", ".csv"}
     )
     if not files:
         raise FileNotFoundError(
@@ -84,15 +84,11 @@ def load_raw_ohlcv(paths: str | Path | Iterable[str | Path]) -> pd.DataFrame:
         time with duplicate timestamps removed. It passes ``validate_ohlcv``
         (gap check disabled, since exchange outages leave short holes in 1m data).
     """
-
     if isinstance(paths, (str, Path)):
         path = Path(paths)
         files = find_kline_files(path) if path.is_dir() else [path]
     else:
         files = [Path(p) for p in paths]
-    for f in files:
-        if not f.exists():
-            raise FileNotFoundError(f"Kline file not found: {f}")
 
     raw = pd.concat([_read_kline_file(f) for f in files], ignore_index=True)
     index = epoch_to_datetime(raw["open_time"])
@@ -104,12 +100,3 @@ def load_raw_ohlcv(paths: str | Path | Iterable[str | Path]) -> pd.DataFrame:
         raise ValueError("No rows loaded; check the input files.")
     validate_ohlcv(df, expected_freq=None)
     return df
-
-
-__all__ = [
-    "KLINE_COLUMNS",
-    "OHLCV_COLUMNS",
-    "epoch_to_datetime",
-    "find_kline_files",
-    "load_raw_ohlcv",
-]
